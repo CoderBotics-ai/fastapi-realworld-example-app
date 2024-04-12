@@ -12,9 +12,13 @@ class User(RWModel):
     image: Optional[str] = None
 
 
+
+
+
+
+
+
 class UserInDB(IDModelMixin, DateTimeModelMixin, User):
-    salt: str = ""
-    hashed_password: str = ""
 
     def check_password(self, password: str) -> bool:
         return security.verify_password(self.salt + password, self.hashed_password)

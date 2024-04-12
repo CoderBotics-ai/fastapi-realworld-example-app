@@ -9,9 +9,11 @@ from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 from app.models.schemas.profiles import ProfileInResponse
 from app.resources import strings
+from pymongo.collection import Collection
+
+from pymongo.collection import Collection
 
 router = APIRouter()
-
 
 @router.get(
     "/{username}",
@@ -22,7 +24,6 @@ async def retrieve_profile_by_username(
     profile: Profile = Depends(get_profile_by_username_from_path),
 ) -> ProfileInResponse:
     return ProfileInResponse(profile=profile)
-
 
 @router.post(
     "/{username}/follow",
@@ -62,7 +63,7 @@ async def follow_for_user(
 async def unsubscribe_from_user(
     profile: Profile = Depends(get_profile_by_username_from_path),
     user: User = Depends(get_current_user_authorizer()),
-    profiles_repo: ProfilesRepository = Depends(get_repository(ProfilesRepository)),
+    profiles_repo: Collection = Depends(get_repository(ProfilesRepository)),
 ) -> ProfileInResponse:
     if user.username == profile.username:
         raise HTTPException(
@@ -76,9 +77,9 @@ async def unsubscribe_from_user(
             detail=strings.USER_IS_NOT_FOLLOWED,
         )
 
-    await profiles_repo.remove_user_from_followers(
-        target_user=profile,
-        requested_user=user,
+    await profiles_repo.update_one(
+        {"username": profile.username},
+        {"$pull": {"followers": user.username}}
     )
 
     return ProfileInResponse(profile=profile.copy(update={"following": False}))
