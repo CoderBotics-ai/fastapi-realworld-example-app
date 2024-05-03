@@ -9,13 +9,13 @@ from app.db.errors import EntityDoesNotExist
 from app.db.repositories.articles import ArticlesRepository
 from app.models.domain.articles import Article
 from app.models.domain.users import User
+from app.resources import strings
+from app.services.articles import check_user_can_modify_article
 from app.models.schemas.articles import (
     DEFAULT_ARTICLES_LIMIT,
     DEFAULT_ARTICLES_OFFSET,
     ArticlesFilters,
 )
-from app.resources import strings
-from app.services.articles import check_user_can_modify_article
 
 
 def get_articles_filters(
@@ -33,14 +33,16 @@ def get_articles_filters(
         offset=offset,
     )
 
-
 async def get_article_by_slug_from_path(
     slug: str = Path(..., min_length=1),
     user: Optional[User] = Depends(get_current_user_authorizer(required=False)),
     articles_repo: ArticlesRepository = Depends(get_repository(ArticlesRepository)),
 ) -> Article:
     try:
-        return await articles_repo.get_article_by_slug(slug=slug, requested_user=user)
+        article = await articles_repo.collection.find_one({"slug": slug})
+        if not article:
+            raise EntityDoesNotExist()
+        return Article(**article)
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -6,13 +6,14 @@ from loguru import logger
 from app.core.settings.app import AppSettings
 from app.db.events import close_db_connection, connect_to_db
 
-
 def create_start_app_handler(
     app: FastAPI,
     settings: AppSettings,
 ) -> Callable:  # type: ignore
     async def start_app() -> None:
-        await connect_to_db(app, settings)
+        app.state.client = AsyncIOMotorClient(settings.MONGO_URI)
+        app.state.db = app.state.client[settings.MONGO_DB_NAME]
+        logger.info("Database connection established")
 
     return start_app
 

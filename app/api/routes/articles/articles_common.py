@@ -7,6 +7,7 @@ from app.api.dependencies.database import get_repository
 from app.db.repositories.articles import ArticlesRepository
 from app.models.domain.articles import Article
 from app.models.domain.users import User
+from app.resources import strings
 from app.models.schemas.articles import (
     DEFAULT_ARTICLES_LIMIT,
     DEFAULT_ARTICLES_OFFSET,
@@ -14,10 +15,8 @@ from app.models.schemas.articles import (
     ArticleInResponse,
     ListOfArticlesInResponse,
 )
-from app.resources import strings
 
 router = APIRouter()
-
 
 @router.get(
     "/feed",
@@ -43,7 +42,6 @@ async def get_articles_for_user_feed(
         articles_count=len(articles),
     )
 
-
 @router.post(
     "/{slug}/favorite",
     response_model=ArticleInResponse,
@@ -55,24 +53,29 @@ async def mark_article_as_favorite(
     articles_repo: ArticlesRepository = Depends(get_repository(ArticlesRepository)),
 ) -> ArticleInResponse:
     if not article.favorited:
-        await articles_repo.add_article_into_favorites(article=article, user=user)
+        # Update the article to add it to the user's favorites
+        await articles_repo.collection.update_one(
+            {"_id": article.id},
+            {"$addToSet": {"favorited_by": user.id}}
+        )
+        # Increment the favorites count
+        await articles_repo.collection.update_one(
+            {"_id": article.id},
+            {"$inc": {"favorites_count": 1}}
+        )
+
+        # Update the article object
+        article.favorited = True
+        article.favorites_count += 1
 
         return ArticleInResponse(
-            article=ArticleForResponse.from_orm(
-                article.copy(
-                    update={
-                        "favorited": True,
-                        "favorites_count": article.favorites_count + 1,
-                    },
-                ),
-            ),
+            article=ArticleForResponse.from_orm(article),
         )
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=strings.ARTICLE_IS_ALREADY_FAVORITED,
     )
-
 
 @router.delete(
     "/{slug}/favorite",
@@ -85,17 +88,15 @@ async def remove_article_from_favorites(
     articles_repo: ArticlesRepository = Depends(get_repository(ArticlesRepository)),
 ) -> ArticleInResponse:
     if article.favorited:
-        await articles_repo.remove_article_from_favorites(article=article, user=user)
+        await articles_repo.collection.update_one(
+            {"_id": article.id},
+            {"$pull": {"favorited_by": user.id}}
+        )
+        article.favorited = False
+        article.favorites_count -= 1
 
         return ArticleInResponse(
-            article=ArticleForResponse.from_orm(
-                article.copy(
-                    update={
-                        "favorited": False,
-                        "favorites_count": article.favorites_count - 1,
-                    },
-                ),
-            ),
+            article=ArticleForResponse.from_orm(article),
         )
 
     raise HTTPException(

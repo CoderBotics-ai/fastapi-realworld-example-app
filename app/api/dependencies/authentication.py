@@ -74,7 +74,6 @@ def _get_authorization_header_optional(
 
     return ""
 
-
 async def _get_current_user(
     users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
     token: str = Depends(_get_authorization_header_retriever()),
@@ -92,7 +91,10 @@ async def _get_current_user(
         )
 
     try:
-        return await users_repo.get_user_by_username(username=username)
+        user_document = await users_repo.collection.find_one({"username": username})
+        if user_document is None:
+            raise EntityDoesNotExist
+        return User(**user_document)
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

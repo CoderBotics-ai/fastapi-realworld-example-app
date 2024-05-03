@@ -6,18 +6,17 @@ from app.core.config import get_app_settings
 from app.core.settings.app import AppSettings
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.users import UsersRepository
+from app.resources import strings
+from app.services import jwt
+from app.services.authentication import check_email_is_taken, check_username_is_taken
 from app.models.schemas.users import (
     UserInCreate,
     UserInLogin,
     UserInResponse,
     UserWithToken,
 )
-from app.resources import strings
-from app.services import jwt
-from app.services.authentication import check_email_is_taken, check_username_is_taken
 
 router = APIRouter()
-
 
 @router.post("/login", response_model=UserInResponse, name="auth:login")
 async def login(

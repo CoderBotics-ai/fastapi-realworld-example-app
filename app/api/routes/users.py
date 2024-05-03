@@ -34,7 +34,6 @@ async def retrieve_current_user(
         ),
     )
 
-
 @router.put("", response_model=UserInResponse, name="users:update-current-user")
 async def update_current_user(
     user_update: UserInUpdate = Body(..., embed=True, alias="user"),
@@ -43,20 +42,20 @@ async def update_current_user(
     settings: AppSettings = Depends(get_app_settings),
 ) -> UserInResponse:
     if user_update.username and user_update.username != current_user.username:
-        if await check_username_is_taken(users_repo, user_update.username):
+        if await users_repo.check_username_exists(user_update.username):
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail=strings.USERNAME_TAKEN,
             )
 
     if user_update.email and user_update.email != current_user.email:
-        if await check_email_is_taken(users_repo, user_update.email):
+        if await users_repo.check_email_exists(user_update.email):
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail=strings.EMAIL_TAKEN,
             )
 
-    user = await users_repo.update_user(user=current_user, **user_update.dict())
+    user = await users_repo.update_user(user=current_user, update_fields=user_update.dict())
 
     token = jwt.create_access_token_for_user(
         user,

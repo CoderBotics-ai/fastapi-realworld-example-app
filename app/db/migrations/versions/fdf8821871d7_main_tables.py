@@ -16,20 +16,10 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-
 def create_updated_at_trigger() -> None:
-    op.execute(
-        """
-    CREATE FUNCTION update_updated_at_column()
-        RETURNS TRIGGER AS
-    $$
-    BEGIN
-        NEW.updated_at = now();
-        RETURN NEW;
-    END;
-    $$ language 'plpgsql';
-    """
-    )
+    # MongoDB does not support triggers like SQL databases. 
+    # This function will be left empty as MongoDB uses a different approach for handling such operations.
+    pass
 
 
 def timestamps() -> Tuple[sa.Column, sa.Column]:
@@ -49,149 +39,92 @@ def timestamps() -> Tuple[sa.Column, sa.Column]:
         ),
     )
 
-
 def create_users_table() -> None:
-    op.create_table(
-        "users",
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("username", sa.Text, unique=True, nullable=False, index=True),
-        sa.Column("email", sa.Text, unique=True, nullable=False, index=True),
-        sa.Column("salt", sa.Text, nullable=False),
-        sa.Column("hashed_password", sa.Text),
-        sa.Column("bio", sa.Text, nullable=False, server_default=""),
-        sa.Column("image", sa.Text),
-        *timestamps(),
-    )
-    op.execute(
-        """
-        CREATE TRIGGER update_user_modtime
-            BEFORE UPDATE
-            ON users
-            FOR EACH ROW
-        EXECUTE PROCEDURE update_updated_at_column();
-        """
-    )
+    db = client.get_database("your_database_name")
+    users_collection = db.get_collection("users")
 
+    users_collection.create_index([("username", pymongo.ASCENDING)], unique=True)
+    users_collection.create_index([("email", pymongo.ASCENDING)], unique=True)
 
 def create_followers_to_followings_table() -> None:
-    op.create_table(
-        "followers_to_followings",
-        sa.Column(
-            "follower_id",
-            sa.Integer,
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "following_id",
-            sa.Integer,
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-    )
-    op.create_primary_key(
-        "pk_followers_to_followings",
-        "followers_to_followings",
-        ["follower_id", "following_id"],
-    )
-
+    # Since MongoDB does not use tables or schemas in the same way SQL databases do,
+    # and the followers and followings are stored as arrays of ObjectIds in the user documents,
+    # there is no need to create a separate table or collection for followers to followings.
+    # This function will therefore be an empty operation in the context of MongoDB.
+    pass
 
 def create_articles_table() -> None:
-    op.create_table(
-        "articles",
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("slug", sa.Text, unique=True, nullable=False, index=True),
-        sa.Column("title", sa.Text, nullable=False),
-        sa.Column("description", sa.Text, nullable=False),
-        sa.Column("body", sa.Text, nullable=False),
-        sa.Column(
-            "author_id", sa.Integer, sa.ForeignKey("users.id", ondelete="SET NULL")
-        ),
-        *timestamps(),
-    )
-    op.execute(
-        """
-        CREATE TRIGGER update_article_modtime
-            BEFORE UPDATE
-            ON articles
-            FOR EACH ROW
-        EXECUTE PROCEDURE update_updated_at_column();
-        """
-    )
+    db = client.get_database("your_database_name")
+    articles_collection = db.get_collection("articles")
 
+    # Create indexes for the articles collection
+    articles_collection.create_index([("slug", pymongo.ASCENDING)], unique=True)
+    articles_collection.create_index([("author_id", pymongo.ASCENDING)])
+
+    # Assuming the timestamps function provides created_at and updated_at fields
+    # and that these fields are managed by the application logic or MongoDB's internal mechanisms
 
 def create_tags_table() -> None:
-    op.create_table("tags", sa.Column("tag", sa.Text, primary_key=True))
-
+    db = op.get_bind()
+    db["tags"].create_index([("tag", pymongo.ASCENDING)], unique=True)
 
 def create_articles_to_tags_table() -> None:
-    op.create_table(
-        "articles_to_tags",
-        sa.Column(
-            "article_id",
-            sa.Integer,
-            sa.ForeignKey("articles.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "tag",
-            sa.Text,
-            sa.ForeignKey("tags.tag", ondelete="CASCADE"),
-            nullable=False,
-        ),
-    )
-    op.create_primary_key(
-        "pk_articles_to_tags", "articles_to_tags", ["article_id", "tag"]
+    db = op.get_database()
+    articles_collection = db.get_collection("articles")
+    tags_collection = db.get_collection("tags")
+
+    # Ensure the 'tags' field exists in articles collection and is an array
+    articles_collection.update_many(
+        {},
+        {"$set": {"tags": []}},
+        upsert=False
     )
 
+    # Ensure the 'articles' field exists in tags collection and is an array
+    tags_collection.update_many(
+        {},
+        {"$set": {"articles": []}},
+        upsert=False
+    )
+
+    # Create indexes to efficiently query by tags and articles
+    articles_collection.create_index([("tags", 1)])
+    tags_collection.create_index([("articles", 1)])
 
 def create_favorites_table() -> None:
-    op.create_table(
-        "favorites",
-        sa.Column(
-            "user_id",
-            sa.Integer,
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "article_id",
-            sa.Integer,
-            sa.ForeignKey("articles.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-    )
-    op.create_primary_key("pk_favorites", "favorites", ["user_id", "article_id"])
-
+    # In MongoDB, we do not need to explicitly create tables (collections) or define their schema ahead of time.
+    # The 'favorites' functionality can be handled by adding an array of article ObjectIds to the user document.
+    # This function is left intentionally empty because MongoDB handles this dynamically.
+    pass
 
 def create_commentaries_table() -> None:
-    op.create_table(
-        "commentaries",
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("body", sa.Text, nullable=False),
-        sa.Column(
-            "author_id",
-            sa.Integer,
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "article_id",
-            sa.Integer,
-            sa.ForeignKey("articles.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        *timestamps(),
-    )
-    op.execute(
-        """
-        CREATE TRIGGER update_comment_modtime
-            BEFORE UPDATE
-            ON commentaries
-            FOR EACH ROW
-        EXECUTE PROCEDURE update_updated_at_column();
-        """
-    )
+    db = client.get_database("your_database_name")
+    db.create_collection("commentaries")
+    db.commentaries.create_index([("author_id", pymongo.ASCENDING)], unique=False)
+    db.commentaries.create_index([("article_id", pymongo.ASCENDING)], unique=False)
+    db.command({
+        "collMod": "commentaries",
+        "validator": {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["body", "author_id", "article_id"],
+                "properties": {
+                    "body": {
+                        "bsonType": "string",
+                        "description": "must be a string and is required"
+                    },
+                    "author_id": {
+                        "bsonType": "objectId",
+                        "description": "must be an objectId and is required"
+                    },
+                    "article_id": {
+                        "bsonType": "objectId",
+                        "description": "must be an objectId and is required"
+                    }
+                }
+            }
+        }
+    })
 
 
 def upgrade() -> None:
@@ -204,13 +137,10 @@ def upgrade() -> None:
     create_favorites_table()
     create_commentaries_table()
 
-
 def downgrade() -> None:
-    op.drop_table("commentaries")
-    op.drop_table("favorites")
-    op.drop_table("articles_to_tags")
-    op.drop_table("tags")
-    op.drop_table("articles")
-    op.drop_table("followers_to_followings")
-    op.drop_table("users")
-    op.execute("DROP FUNCTION update_updated_at_column")
+    db = op.get_database()
+    db.drop_collection("users")
+    db.drop_collection("articles")
+    db.drop_collection("tags")
+    db.drop_collection("commentaries")
+    db.command("drop", "update_updated_at_column")

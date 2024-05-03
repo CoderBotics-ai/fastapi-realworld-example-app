@@ -11,10 +11,41 @@ from app.models.domain.comments import Comment
 from app.models.domain.users import User
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class CommentsRepository(BaseRepository):
     def __init__(self, conn: Connection) -> None:
         super().__init__(conn)
         self._profiles_repo = ProfilesRepository(conn)
+
 
     async def get_comment_by_id(
         self,
@@ -23,15 +54,13 @@ class CommentsRepository(BaseRepository):
         article: Article,
         user: Optional[User] = None,
     ) -> Comment:
-        comment_row = await queries.get_comment_by_id_and_slug(
-            self.connection,
-            comment_id=comment_id,
-            article_slug=article.slug,
+        comment_document = await self.connection["comments"].find_one(
+            {"comment_id": comment_id, "article_id": article._id}
         )
-        if comment_row:
+        if comment_document:
             return await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
+                comment_row=comment_document,
+                author_username=comment_document["author_username"],
                 requested_user=user,
             )
 
@@ -45,18 +74,24 @@ class CommentsRepository(BaseRepository):
         article: Article,
         user: Optional[User] = None,
     ) -> List[Comment]:
-        comments_rows = await queries.get_comments_for_article_by_slug(
-            self.connection,
-            slug=article.slug,
+        comments_collection = self.db.get_collection('users')
+        comments_cursor = comments_collection.find(
+            {"comments.article_id": article._id},
+            {"comments.$": 1, "username": 1}
         )
-        return [
-            await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
-                requested_user=user,
-            )
-            for comment_row in comments_rows
-        ]
+        comments = await comments_cursor.to_list(None)
+
+        result = []
+        for comment_data in comments:
+            for comment in comment_data['comments']:
+                author_username = comment_data['username']
+                comment_obj = await self._get_comment_from_db_record(
+                    comment_row=comment,
+                    author_username=author_username,
+                    requested_user=user,
+                )
+                result.append(comment_obj)
+        return result
 
     async def create_comment_for_article(
         self,
@@ -65,24 +100,29 @@ class CommentsRepository(BaseRepository):
         article: Article,
         user: User,
     ) -> Comment:
-        comment_row = await queries.create_new_comment(
-            self.connection,
-            body=body,
-            article_slug=article.slug,
-            author_username=user.username,
-        )
+        comment_document = {
+            "body": body,
+            "article_id": article.id,
+            "author_id": user.id,
+            "created_at": datetime.datetime.utcnow(),
+            "updated_at": datetime.datetime.utcnow(),
+        }
+        result = await self.db.comments.insert_one(comment_document)
+        comment_document["_id"] = result.inserted_id
         return await self._get_comment_from_db_record(
-            comment_row=comment_row,
-            author_username=comment_row["author_username"],
+            comment_row=comment_document,
+            author_username=user.username,
             requested_user=user,
         )
 
+
     async def delete_comment(self, *, comment: Comment) -> None:
-        await queries.delete_comment_by_id(
-            self.connection,
-            comment_id=comment.id_,
-            author_username=comment.author.username,
+        result = await self.connection["users"].update_many(
+            {"comments.comment_id": comment.id_},
+            {"$pull": {"comments": {"comment_id": comment.id_}}}
         )
+        if result.modified_count == 0:
+            raise EntityDoesNotExist("comment with id {0} does not exist".format(comment.id_))
 
     async def _get_comment_from_db_record(
         self,

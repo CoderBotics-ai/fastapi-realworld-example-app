@@ -10,20 +10,19 @@ from app.db.repositories.profiles import ProfilesRepository
 from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 from app.resources import strings
+from pymongo.collection import Collection
+from bson import ObjectId
 
 
 async def get_profile_by_username_from_path(
     username: str = Path(..., min_length=1),
     user: Optional[User] = Depends(get_current_user_authorizer(required=False)),
-    profiles_repo: ProfilesRepository = Depends(get_repository(ProfilesRepository)),
+    profiles_repo: Collection = Depends(get_repository(ProfilesRepository)),
 ) -> Profile:
-    try:
-        return await profiles_repo.get_profile_by_username(
-            username=username,
-            requested_user=user,
-        )
-    except EntityDoesNotExist:
+    profile_document = await profiles_repo.find_one({"username": username})
+    if not profile_document:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=strings.USER_DOES_NOT_EXIST_ERROR,
         )
+    return Profile(**profile_document)

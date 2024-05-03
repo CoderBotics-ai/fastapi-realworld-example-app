@@ -11,6 +11,36 @@ from app.models.domain.users import User
 UserLike = Union[User, Profile]
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class ProfilesRepository(BaseRepository):
     def __init__(self, conn: Connection):
         super().__init__(conn)
@@ -22,7 +52,11 @@ class ProfilesRepository(BaseRepository):
         username: str,
         requested_user: Optional[UserLike],
     ) -> Profile:
-        user = await self._users_repo.get_user_by_username(username=username)
+        user_doc = await self.db.users.find_one({"username": username})
+        if not user_doc:
+            raise Exception("User not found")
+
+        user = User(**user_doc)
 
         profile = Profile(username=user.username, bio=user.bio, image=user.image)
         if requested_user:
@@ -39,13 +73,11 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> bool:
-        return (
-            await queries.is_user_following_for_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
-            )
-        )["is_following"]
+        target_user_document = await self.connection["users"].find_one({"username": target_user.username})
+        requested_user_document = await self.connection["users"].find_one({"username": requested_user.username})
+        
+        return target_user_document["_id"] in requested_user_document["followings"]
+
 
     async def add_user_into_followers(
         self,
@@ -53,11 +85,17 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> None:
-        async with self.connection.transaction():
-            await queries.subscribe_user_to_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
+        target_user_id = await self.db.users.find_one({'username': target_user.username}, {'_id': 1})
+        requested_user_id = await self.db.users.find_one({'username': requested_user.username}, {'_id': 1})
+
+        if target_user_id and requested_user_id:
+            await self.db.users.update_one(
+                {'_id': target_user_id['_id']},
+                {'$addToSet': {'followers': requested_user_id['_id']}}
+            )
+            await self.db.users.update_one(
+                {'_id': requested_user_id['_id']},
+                {'$addToSet': {'followings': target_user_id['_id']}}
             )
 
     async def remove_user_from_followers(
@@ -66,9 +104,11 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> None:
-        async with self.connection.transaction():
-            await queries.unsubscribe_user_from_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
-            )
+        await self.db.users.update_one(
+            {"username": target_user.username},
+            {"$pull": {"followers": requested_user._id}}
+        )
+        await self.db.users.update_one(
+            {"username": requested_user.username},
+            {"$pull": {"followings": target_user._id}}
+        )

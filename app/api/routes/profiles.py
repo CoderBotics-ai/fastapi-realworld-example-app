@@ -23,7 +23,6 @@ async def retrieve_profile_by_username(
 ) -> ProfileInResponse:
     return ProfileInResponse(profile=profile)
 
-
 @router.post(
     "/{username}/follow",
     response_model=ProfileInResponse,
@@ -46,13 +45,15 @@ async def follow_for_user(
             detail=strings.USER_IS_ALREADY_FOLLOWED,
         )
 
-    await profiles_repo.add_user_into_followers(
-        target_user=profile,
-        requested_user=user,
+    # MongoDB operation to add user into followers
+    await profiles_repo.collection.update_one(
+        {"_id": profile.id},
+        {"$addToSet": {"followers": user.id}}
     )
 
-    return ProfileInResponse(profile=profile.copy(update={"following": True}))
+    profile.following = True  # Update the profile object to reflect the change
 
+    return ProfileInResponse(profile=profile)
 
 @router.delete(
     "/{username}/follow",
@@ -76,9 +77,11 @@ async def unsubscribe_from_user(
             detail=strings.USER_IS_NOT_FOLLOWED,
         )
 
-    await profiles_repo.remove_user_from_followers(
-        target_user=profile,
-        requested_user=user,
+    await profiles_repo.collection.update_one(
+        {"_id": profile.id},
+        {"$pull": {"followers": user.id}}
     )
 
-    return ProfileInResponse(profile=profile.copy(update={"following": False}))
+    profile.following = False
+
+    return ProfileInResponse(profile=profile)
