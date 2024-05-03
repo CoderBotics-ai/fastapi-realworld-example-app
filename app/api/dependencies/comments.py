@@ -12,7 +12,6 @@ from app.models.domain.users import User
 from app.resources import strings
 from app.services.comments import check_user_can_modify_comment
 
-
 async def get_comment_by_id_from_path(
     comment_id: int = Path(..., ge=1),
     article: Article = Depends(articles.get_article_by_slug_from_path),
@@ -24,11 +23,13 @@ async def get_comment_by_id_from_path(
     ),
 ) -> Comment:
     try:
-        return await comments_repo.get_comment_by_id(
-            comment_id=comment_id,
-            article=article,
-            user=user,
-        )
+        comment = await comments_repo.collection.find_one({
+            "_id": comment_id,
+            "article_id": article.id
+        })
+        if not comment:
+            raise EntityDoesNotExist
+        return Comment(**comment)
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -14,6 +14,9 @@ from app.db.repositories.users import UsersRepository
 from app.models.domain.users import User
 from app.resources import strings
 from app.services import jwt
+from pymongo.collection import Collection
+from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 HEADER_KEY = "Authorization"
 
@@ -76,7 +79,7 @@ def _get_authorization_header_optional(
 
 
 async def _get_current_user(
-    users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
+    users_repo: Collection = Depends(get_repository(UsersRepository)),
     token: str = Depends(_get_authorization_header_retriever()),
     settings: AppSettings = Depends(get_app_settings),
 ) -> User:
@@ -92,8 +95,11 @@ async def _get_current_user(
         )
 
     try:
-        return await users_repo.get_user_by_username(username=username)
-    except EntityDoesNotExist:
+        user_document = await users_repo.find_one({"username": username})
+        if user_document is None:
+            raise EntityDoesNotExist
+        return User(**user_document)
+    except PyMongoError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.MALFORMED_PAYLOAD,

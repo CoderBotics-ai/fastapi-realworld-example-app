@@ -4,22 +4,17 @@ from loguru import logger
 
 from app.core.settings.app import AppSettings
 
-
 async def connect_to_db(app: FastAPI, settings: AppSettings) -> None:
-    logger.info("Connecting to PostgreSQL")
+    logger.info("Connecting to MongoDB")
 
-    app.state.pool = await asyncpg.create_pool(
-        str(settings.database_url),
-        min_size=settings.min_connection_count,
-        max_size=settings.max_connection_count,
-    )
+    client = AsyncIOMotorClient(str(settings.database_url), minPoolSize=settings.min_connection_count, maxPoolSize=settings.max_connection_count)
+    app.state.db = client.get_default_database()
 
     logger.info("Connection established")
-
 
 async def close_db_connection(app: FastAPI) -> None:
     logger.info("Closing connection to database")
 
-    await app.state.pool.close()
+    await app.state.db_client.close()
 
     logger.info("Connection closed")
