@@ -1,5 +1,7 @@
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.users import UsersRepository
+from bson.objectid import ObjectId
+
 
 
 async def check_username_is_taken(repo: UsersRepository, username: str) -> bool:

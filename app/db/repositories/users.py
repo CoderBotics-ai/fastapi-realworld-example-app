@@ -4,27 +4,62 @@ from app.db.errors import EntityDoesNotExist
 from app.db.queries.queries import queries
 from app.db.repositories.base import BaseRepository
 from app.models.domain.users import User, UserInDB
+from bson.objectid import ObjectId
+from pymongo import MongoClient
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class UsersRepository(BaseRepository):
-    async def get_user_by_email(self, *, email: str) -> UserInDB:
-        user_row = await queries.get_user_by_email(self.connection, email=email)
-        if user_row:
-            return UserInDB(**user_row)
+
+    async def get_user_by_email(self, *, email: str) -> Optional[UserInDB]:
+        user_doc = self.users_collection.find_one({"email": email})
+        if user_doc:
+            return UserInDB(**user_doc)
 
         raise EntityDoesNotExist("user with email {0} does not exist".format(email))
 
-    async def get_user_by_username(self, *, username: str) -> UserInDB:
-        user_row = await queries.get_user_by_username(
-            self.connection,
-            username=username,
-        )
-        if user_row:
-            return UserInDB(**user_row)
 
+    async def get_user_by_username(self, *, username: str) -> Optional[UserInDB]:
+        user_document = self.users_collection.find_one({"username": username})
+        if user_document:
+            return UserInDB(**user_document)
         raise EntityDoesNotExist(
-            "user with username {0} does not exist".format(username),
+            f"user with username {username} does not exist"
         )
+
+    def __init__(self, mongo_client: MongoClient):
+        self.db = mongo_client['your_database_name']  # Replace with your actual database name
+        self.users_collection = self.db['users']  # Replace with your actual collection name
+
 
     async def create_user(
         self,
@@ -36,16 +71,27 @@ class UsersRepository(BaseRepository):
         user = UserInDB(username=username, email=email)
         user.change_password(password)
 
-        async with self.connection.transaction():
-            user_row = await queries.create_new_user(
-                self.connection,
-                username=user.username,
-                email=user.email,
-                salt=user.salt,
-                hashed_password=user.hashed_password,
-            )
+        user_data = {
+            "_id": ObjectId(),
+            "username": user.username,
+            "email": user.email,
+            "salt": user.salt,
+            "hashed_password": user.hashed_password,
+            "bio": "",  # Assuming bio is optional and default to an empty string
+            "image": "",  # Assuming image is optional and default to an empty string
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "followers": [],
+            "followings": [],
+            "favorites": [],
+            "comments": []
+        }
+
+        result = self.users_collection.insert_one(user_data)
+        user_row = self.users_collection.find_one({"_id": result.inserted_id})
 
         return user.copy(update=dict(user_row))
+
 
     async def update_user(  # noqa: WPS211
         self,
@@ -66,16 +112,24 @@ class UsersRepository(BaseRepository):
         if password:
             user_in_db.change_password(password)
 
-        async with self.connection.transaction():
-            user_in_db.updated_at = await queries.update_user_by_username(
-                self.connection,
-                username=user.username,
-                new_username=user_in_db.username,
-                new_email=user_in_db.email,
-                new_salt=user_in_db.salt,
-                new_password=user_in_db.hashed_password,
-                new_bio=user_in_db.bio,
-                new_image=user_in_db.image,
-            )
+        # Update the user in the database
+        update_data = {
+            "username": user_in_db.username,
+            "email": user_in_db.email,
+            "bio": user_in_db.bio,
+            "image": user_in_db.image,
+        }
+        if password:
+            update_data["salt"] = user_in_db.salt
+            update_data["hashed_password"] = user_in_db.hashed_password
+
+        await self.users_collection.update_one(
+            {"username": user.username},
+            {"$set": update_data},
+            upsert=False
+        )
+
+        # Update the updated_at field
+        user_in_db.updated_at = datetime.utcnow()
 
         return user_in_db

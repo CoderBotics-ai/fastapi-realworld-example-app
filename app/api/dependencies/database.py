@@ -7,9 +7,12 @@ from starlette.requests import Request
 
 from app.db.repositories.base import BaseRepository
 
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
-def _get_db_pool(request: Request) -> Pool:
-    return request.app.state.pool
+
+
+def _get_db_pool(request: Request) -> AsyncIOMotorDatabase:
+    return request.app.state.client[request.app.state.db_name]
 
 
 async def _get_connection_from_pool(

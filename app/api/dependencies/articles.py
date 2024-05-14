@@ -9,13 +9,26 @@ from app.db.errors import EntityDoesNotExist
 from app.db.repositories.articles import ArticlesRepository
 from app.models.domain.articles import Article
 from app.models.domain.users import User
+from app.resources import strings
+from app.services.articles import check_user_can_modify_article
+from bson.objectid import ObjectId
+from pymongo import MongoClient
+from pymongo.results import InsertOneResult, UpdateResult, DeleteResult
 from app.models.schemas.articles import (
     DEFAULT_ARTICLES_LIMIT,
     DEFAULT_ARTICLES_OFFSET,
     ArticlesFilters,
 )
-from app.resources import strings
-from app.services.articles import check_user_can_modify_article
+
+def check_article_modification_permissions(
+    current_article: Article = Depends(get_article_by_slug_from_path),
+    user: User = Depends(get_current_user_authorizer()),
+) -> None:
+    if not check_user_can_modify_article(current_article, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=strings.USER_IS_NOT_AUTHOR_OF_ARTICLE,
+        )
 
 
 def get_articles_filters(
@@ -45,15 +58,4 @@ async def get_article_by_slug_from_path(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=strings.ARTICLE_DOES_NOT_EXIST_ERROR,
-        )
-
-
-def check_article_modification_permissions(
-    current_article: Article = Depends(get_article_by_slug_from_path),
-    user: User = Depends(get_current_user_authorizer()),
-) -> None:
-    if not check_user_can_modify_article(current_article, user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=strings.USER_IS_NOT_AUTHOR_OF_ARTICLE,
         )

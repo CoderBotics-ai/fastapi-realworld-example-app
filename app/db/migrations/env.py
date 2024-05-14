@@ -5,9 +5,11 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
-
 from app.core.config import get_app_settings  # isort:skip
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
 
 SETTINGS = get_app_settings()
 DATABASE_URL = SETTINGS.database_url
@@ -22,17 +24,62 @@ config.set_main_option("sqlalchemy.url", str(DATABASE_URL))
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    settings = get_app_settings()
+    client = MongoClient(settings.MONGO_URI)
+    db = client[settings.MONGO_DB_NAME]
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+    with client:
+        db.users.insert_many([
+            {
+                "_id": ObjectId(),
+                "username": "String",
+                "email": "String",
+                "salt": "String",
+                "hashed_password": "String",
+                "bio": "String",
+                "image": "String",
+                "created_at": "ISODate",
+                "updated_at": "ISODate",
+                "followers": [ObjectId()],
+                "followings": [ObjectId()],
+                "favorites": [ObjectId()],
+                "comments": [
+                    {
+                        "comment_id": ObjectId(),
+                        "body": "String",
+                        "article_id": ObjectId(),
+                        "created_at": "ISODate",
+                        "updated_at": "ISODate"
+                    }
+                ]
+            },
+            # Add more user documents as needed
+        ])
 
-        with context.begin_transaction():
-            context.run_migrations()
+        db.articles.insert_many([
+            {
+                "_id": ObjectId(),
+                "slug": "String",
+                "title": "String",
+                "description": "String",
+                "body": "String",
+                "author_id": ObjectId(),
+                "tags": ["String"],
+                "created_at": "ISODate",
+                "updated_at": "ISODate",
+                "favorited_by": [ObjectId()],
+                "comments": [ObjectId()]
+            },
+            # Add more article documents as needed
+        ])
+
+        db.tags.insert_many([
+            {
+                "tag": "String",
+                "articles": [ObjectId()]
+            },
+            # Add more tag documents as needed
+        ])
 
 
 run_migrations_online()

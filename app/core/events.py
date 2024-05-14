@@ -5,6 +5,9 @@ from loguru import logger
 
 from app.core.settings.app import AppSettings
 from app.db.events import close_db_connection, connect_to_db
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+
 
 
 def create_start_app_handler(
@@ -12,7 +15,14 @@ def create_start_app_handler(
     settings: AppSettings,
 ) -> Callable:  # type: ignore
     async def start_app() -> None:
-        await connect_to_db(app, settings)
+        client = MongoClient(settings.DB_URI, server_api=ServerApi('1'))
+        try:
+            await client.admin.command('ping')
+            logger.info("Connected to MongoDB")
+            app.mongodb_client = client
+            app.mongodb = client[settings.DB_NAME]
+        except Exception as e:
+            logger.error("Failed to connect to MongoDB", exc_info=True)
 
     return start_app
 

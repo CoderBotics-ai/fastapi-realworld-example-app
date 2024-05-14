@@ -11,6 +11,9 @@ from app.models.schemas.users import UserInResponse, UserInUpdate, UserWithToken
 from app.resources import strings
 from app.services import jwt
 from app.services.authentication import check_email_is_taken, check_username_is_taken
+from bson.objectid import ObjectId
+from pymongo import MongoClient
+from pymongo.collection import Collection
 
 router = APIRouter()
 
@@ -35,6 +38,7 @@ async def retrieve_current_user(
     )
 
 
+# Update the update_current_user function to use the updated UsersRepository
 @router.put("", response_model=UserInResponse, name="users:update-current-user")
 async def update_current_user(
     user_update: UserInUpdate = Body(..., embed=True, alias="user"),

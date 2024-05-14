@@ -12,7 +12,6 @@ from app.resources import strings
 
 router = APIRouter()
 
-
 @router.get(
     "/{username}",
     response_model=ProfileInResponse,
