@@ -14,6 +14,8 @@ from app.db.repositories.users import UsersRepository
 from app.models.domain.users import User
 from app.resources import strings
 from app.services import jwt
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 HEADER_KEY = "Authorization"
 
@@ -91,13 +93,19 @@ async def _get_current_user(
             detail=strings.MALFORMED_PAYLOAD,
         )
 
-    try:
-        return await users_repo.get_user_by_username(username=username)
-    except EntityDoesNotExist:
+    client = MongoClient(settings.database_url)
+    db = client[settings.database_name]
+    users_collection = db["users"]
+
+    user_data = users_collection.find_one({"username": username})
+    if not user_data:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.MALFORMED_PAYLOAD,
         )
+
+    user = User(**user_data)
+    return user
 
 
 async def _get_current_user_optional(

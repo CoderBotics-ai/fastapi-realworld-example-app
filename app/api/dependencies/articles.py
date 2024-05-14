@@ -9,13 +9,21 @@ from app.db.errors import EntityDoesNotExist
 from app.db.repositories.articles import ArticlesRepository
 from app.models.domain.articles import Article
 from app.models.domain.users import User
+from app.resources import strings
+from app.services.articles import check_user_can_modify_article
+
+from fastapi import Depends, HTTPException, Path
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+
+
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 from app.models.schemas.articles import (
     DEFAULT_ARTICLES_LIMIT,
     DEFAULT_ARTICLES_OFFSET,
     ArticlesFilters,
 )
-from app.resources import strings
-from app.services.articles import check_user_can_modify_article
 
 
 def get_articles_filters(
@@ -34,18 +42,25 @@ def get_articles_filters(
     )
 
 
+
 async def get_article_by_slug_from_path(
     slug: str = Path(..., min_length=1),
     user: Optional[User] = Depends(get_current_user_authorizer(required=False)),
     articles_repo: ArticlesRepository = Depends(get_repository(ArticlesRepository)),
 ) -> Article:
-    try:
-        return await articles_repo.get_article_by_slug(slug=slug, requested_user=user)
-    except EntityDoesNotExist:
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["your_database_name"]
+    articles_collection = db["articles"]
+
+    article_data = articles_collection.find_one({"slug": slug})
+    if not article_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=strings.ARTICLE_DOES_NOT_EXIST_ERROR,
         )
+
+    article = Article(**article_data)
+    return article
 
 
 def check_article_modification_permissions(

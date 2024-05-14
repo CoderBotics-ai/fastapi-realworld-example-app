@@ -11,6 +11,8 @@ from app.models.schemas.users import UserInResponse, UserInUpdate, UserWithToken
 from app.resources import strings
 from app.services import jwt
 from app.services.authentication import check_email_is_taken, check_username_is_taken
+from pymongo import MongoClient
+from bson import ObjectId
 
 router = APIRouter()
 
@@ -20,16 +22,25 @@ async def retrieve_current_user(
     user: User = Depends(get_current_user_authorizer()),
     settings: AppSettings = Depends(get_app_settings),
 ) -> UserInResponse:
+    client = MongoClient(settings.database_url)
+    db = client[settings.database_name]
+    users_collection = db["users"]
+
+    user_data = users_collection.find_one({"_id": ObjectId(user.id)})
+
+    if not user_data:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=strings.USER_DOES_NOT_EXIST)
+
     token = jwt.create_access_token_for_user(
         user,
         str(settings.secret_key.get_secret_value()),
     )
     return UserInResponse(
         user=UserWithToken(
-            username=user.username,
-            email=user.email,
-            bio=user.bio,
-            image=user.image,
+            username=user_data["username"],
+            email=user_data["email"],
+            bio=user_data["bio"],
+            image=user_data["image"],
             token=token,
         ),
     )

@@ -6,10 +6,11 @@ from fastapi import Depends
 from starlette.requests import Request
 
 from app.db.repositories.base import BaseRepository
+from pymongo.database import Database
 
 
-def _get_db_pool(request: Request) -> Pool:
-    return request.app.state.pool
+def _get_db_pool(request: Request) -> Database:
+    return request.app.state.db
 
 
 async def _get_connection_from_pool(

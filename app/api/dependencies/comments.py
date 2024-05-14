@@ -11,6 +11,22 @@ from app.models.domain.comments import Comment
 from app.models.domain.users import User
 from app.resources import strings
 from app.services.comments import check_user_can_modify_comment
+from bson import ObjectId
+
+
+from pymongo import MongoClient
+
+
+def check_comment_modification_permissions(
+    comment: Comment = Depends(get_comment_by_id_from_path),
+    user: User = Depends(authentication.get_current_user_authorizer()),
+) -> None:
+    if not check_user_can_modify_comment(comment, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=strings.USER_IS_NOT_AUTHOR_OF_ARTICLE,
+        )
+
 
 
 async def get_comment_by_id_from_path(
@@ -24,24 +40,16 @@ async def get_comment_by_id_from_path(
     ),
 ) -> Comment:
     try:
-        return await comments_repo.get_comment_by_id(
-            comment_id=comment_id,
+        comment = await comments_repo.get_comment_by_id(
+            comment_id=ObjectId(comment_id),
             article=article,
             user=user,
         )
+        if not comment:
+            raise EntityDoesNotExist
+        return comment
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=strings.COMMENT_DOES_NOT_EXIST,
-        )
-
-
-def check_comment_modification_permissions(
-    comment: Comment = Depends(get_comment_by_id_from_path),
-    user: User = Depends(authentication.get_current_user_authorizer()),
-) -> None:
-    if not check_user_can_modify_comment(comment, user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=strings.USER_IS_NOT_AUTHOR_OF_ARTICLE,
         )

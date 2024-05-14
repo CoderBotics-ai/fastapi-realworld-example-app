@@ -5,9 +5,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
-
 from app.core.config import get_app_settings  # isort:skip
+from pymongo import MongoClient
+
+
+from pymongo import MongoClient
+
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
 
 SETTINGS = get_app_settings()
 DATABASE_URL = SETTINGS.database_url
@@ -21,18 +25,17 @@ target_metadata = None
 config.set_main_option("sqlalchemy.url", str(DATABASE_URL))
 
 
+
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    settings = get_app_settings()
+    client = MongoClient(settings.MONGO_URI)
+    db = client[settings.MONGO_DB_NAME]
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+    # Assuming the context.configure and context.run_migrations are adapted to work with MongoDB
+    context.configure(connection=db, target_metadata=target_metadata)
 
-        with context.begin_transaction():
-            context.run_migrations()
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 run_migrations_online()
