@@ -37,6 +37,10 @@ pytest-xdist = "^2.4.0"
 httpx = "^0.23.0"
 asgi-lifespan = "^1.0.1"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+pytest-cov = "^5.0.0"
+
 [tool.isort]
 profile = "black"
 src_paths = ["app", "tests"]

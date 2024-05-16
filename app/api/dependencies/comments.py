@@ -11,6 +11,13 @@ from app.models.domain.comments import Comment
 from app.models.domain.users import User
 from app.resources import strings
 from app.services.comments import check_user_can_modify_comment
+from bson import ObjectId
+from pymongo import MongoClient
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client["your_database_name"]
+users_collection = db["users"]
+comments_collection = db["comments"]
 
 
 async def get_comment_by_id_from_path(
@@ -24,11 +31,13 @@ async def get_comment_by_id_from_path(
     ),
 ) -> Comment:
     try:
-        return await comments_repo.get_comment_by_id(
-            comment_id=comment_id,
-            article=article,
-            user=user,
+        comment = await comments_repo.get_comment_by_id(
+            comment_id=ObjectId(comment_id),
+            article_id=ObjectId(article.id),
         )
+        if comment is None:
+            raise EntityDoesNotExist
+        return comment
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -6,51 +6,16 @@ from app.core.config import get_app_settings
 from app.core.settings.app import AppSettings
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.users import UsersRepository
-from app.models.schemas.users import (
-    UserInCreate,
-    UserInLogin,
-    UserInResponse,
-    UserWithToken,
-)
 from app.resources import strings
 from app.services import jwt
 from app.services.authentication import check_email_is_taken, check_username_is_taken
+from pymongo.collection import Collection
+from bson.objectid import ObjectId
 
-router = APIRouter()
+from pymongo.collection import Collection
+from bson.objectid import ObjectId
 
-
-@router.post("/login", response_model=UserInResponse, name="auth:login")
-async def login(
-    user_login: UserInLogin = Body(..., embed=True, alias="user"),
-    users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
-    settings: AppSettings = Depends(get_app_settings),
-) -> UserInResponse:
-    wrong_login_error = HTTPException(
-        status_code=HTTP_400_BAD_REQUEST,
-        detail=strings.INCORRECT_LOGIN_INPUT,
-    )
-
-    try:
-        user = await users_repo.get_user_by_email(email=user_login.email)
-    except EntityDoesNotExist as existence_error:
-        raise wrong_login_error from existence_error
-
-    if not user.check_password(user_login.password):
-        raise wrong_login_error
-
-    token = jwt.create_access_token_for_user(
-        user,
-        str(settings.secret_key.get_secret_value()),
-    )
-    return UserInResponse(
-        user=UserWithToken(
-            username=user.username,
-            email=user.email,
-            bio=user.bio,
-            image=user.image,
-            token=token,
-        ),
-    )
+from typing import List, Dict, Any
 
 
 @router.post(
@@ -77,6 +42,51 @@ async def register(
         )
 
     user = await users_repo.create_user(**user_create.dict())
+
+    token = jwt.create_access_token_for_user(
+        user,
+        str(settings.secret_key.get_secret_value()),
+    )
+    return UserInResponse(
+        user=UserWithToken(
+            username=user.username,
+            email=user.email,
+            bio=user.bio,
+            image=user.image,
+            token=token,
+        ),
+    )
+from app.models.schemas.users import (
+    UserInCreate,
+    UserInLogin,
+    UserInResponse,
+    UserWithToken,
+)
+
+router = APIRouter()
+
+
+@router.post("/login", response_model=UserInResponse, name="auth:login")
+async def login(
+    user_login: UserInLogin = Body(..., embed=True, alias="user"),
+    users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
+    settings: AppSettings = Depends(get_app_settings),
+) -> UserInResponse:
+    wrong_login_error = HTTPException(
+        status_code=HTTP_400_BAD_REQUEST,
+        detail=strings.INCORRECT_LOGIN_INPUT,
+    )
+
+    user_collection: Collection = users_repo.collection
+
+    user_data = user_collection.find_one({"email": user_login.email})
+    if not user_data:
+        raise wrong_login_error
+
+    user = User(**user_data)
+
+    if not user.check_password(user_login.password):
+        raise wrong_login_error
 
     token = jwt.create_access_token_for_user(
         user,

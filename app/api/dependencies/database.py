@@ -6,25 +6,26 @@ from fastapi import Depends
 from starlette.requests import Request
 
 from app.db.repositories.base import BaseRepository
+from pymongo.database import Database
+from typing import AsyncGenerator
 
 
-def _get_db_pool(request: Request) -> Pool:
-    return request.app.state.pool
-
-
-async def _get_connection_from_pool(
-    pool: Pool = Depends(_get_db_pool),
-) -> AsyncGenerator[Connection, None]:
-    async with pool.acquire() as conn:
-        yield conn
+def _get_db_pool(request: Request) -> Database:
+    return request.app.state.db
 
 
 def get_repository(
     repo_type: Type[BaseRepository],
-) -> Callable[[Connection], BaseRepository]:
+) -> Callable[[Database], BaseRepository]:
     def _get_repo(
-        conn: Connection = Depends(_get_connection_from_pool),
+        db: Database = Depends(_get_connection_from_pool),
     ) -> BaseRepository:
-        return repo_type(conn)
+        return repo_type(db)
 
     return _get_repo
+
+
+async def _get_connection_from_pool(
+    pool: Database = Depends(_get_db_pool),
+) -> AsyncGenerator[Database, None]:
+    yield pool

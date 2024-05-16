@@ -14,11 +14,18 @@ from app.db.repositories.users import UsersRepository
 from app.models.domain.users import User
 from app.resources import strings
 from app.services import jwt
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+from typing import Optional
+from typing import Optional
+from starlette import requests
+from fastapi import HTTPException
 
 HEADER_KEY = "Authorization"
 
 
 class RWAPIKeyHeader(APIKeyHeader):
+
     async def __call__(  # noqa: WPS610
         self,
         request: requests.Request,
@@ -74,6 +81,16 @@ def _get_authorization_header_optional(
 
     return ""
 
+async def _get_current_user_optional(
+    repo: UsersRepository = Depends(get_repository(UsersRepository)),
+    token: str = Depends(_get_authorization_header_retriever(required=False)),
+    settings: AppSettings = Depends(get_app_settings),
+) -> Optional[User]:
+    if token:
+        return await _get_current_user(repo, token, settings)
+
+    return None
+
 
 async def _get_current_user(
     users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
@@ -91,21 +108,16 @@ async def _get_current_user(
             detail=strings.MALFORMED_PAYLOAD,
         )
 
-    try:
-        return await users_repo.get_user_by_username(username=username)
-    except EntityDoesNotExist:
+    client = MongoClient(settings.database_url)
+    db = client[settings.database_name]
+    users_collection = db["users"]
+
+    user_data = users_collection.find_one({"username": username})
+    if not user_data:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.MALFORMED_PAYLOAD,
         )
 
-
-async def _get_current_user_optional(
-    repo: UsersRepository = Depends(get_repository(UsersRepository)),
-    token: str = Depends(_get_authorization_header_retriever(required=False)),
-    settings: AppSettings = Depends(get_app_settings),
-) -> Optional[User]:
-    if token:
-        return await _get_current_user(repo, token, settings)
-
-    return None
+    user = User(**user_data)
+    return user

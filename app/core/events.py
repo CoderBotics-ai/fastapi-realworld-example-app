@@ -5,6 +5,7 @@ from loguru import logger
 
 from app.core.settings.app import AppSettings
 from app.db.events import close_db_connection, connect_to_db
+from motor.motor_asyncio import AsyncIOMotorClient
 
 
 def create_start_app_handler(
@@ -12,7 +13,9 @@ def create_start_app_handler(
     settings: AppSettings,
 ) -> Callable:  # type: ignore
     async def start_app() -> None:
-        await connect_to_db(app, settings)
+        app.state.mongodb_client = AsyncIOMotorClient(settings.mongodb_url)
+        app.state.mongodb = app.state.mongodb_client[settings.mongodb_db]
+        logger.info("Connected to MongoDB")
 
     return start_app
 
