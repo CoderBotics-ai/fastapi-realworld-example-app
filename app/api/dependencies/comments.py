@@ -11,30 +11,8 @@ from app.models.domain.comments import Comment
 from app.models.domain.users import User
 from app.resources import strings
 from app.services.comments import check_user_can_modify_comment
-
-
-async def get_comment_by_id_from_path(
-    comment_id: int = Path(..., ge=1),
-    article: Article = Depends(articles.get_article_by_slug_from_path),
-    user: Optional[User] = Depends(
-        authentication.get_current_user_authorizer(required=False),
-    ),
-    comments_repo: CommentsRepository = Depends(
-        database.get_repository(CommentsRepository),
-    ),
-) -> Comment:
-    try:
-        return await comments_repo.get_comment_by_id(
-            comment_id=comment_id,
-            article=article,
-            user=user,
-        )
-    except EntityDoesNotExist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=strings.COMMENT_DOES_NOT_EXIST,
-        )
-
+from pymongo import MongoClient
+from pymongo.collection import Collection
 
 def check_comment_modification_permissions(
     comment: Comment = Depends(get_comment_by_id_from_path),
@@ -45,3 +23,21 @@ def check_comment_modification_permissions(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.USER_IS_NOT_AUTHOR_OF_ARTICLE,
         )
+
+
+async def get_comment_by_id_from_path(
+    comment_id: int = Path(..., ge=1),
+    article: Article = Depends(articles.get_article_by_slug_from_path),
+    user: Optional[User] = Depends(
+        authentication.get_current_user_authorizer(required=False),
+    ),
+    client: MongoClient = Depends(database.get_mongo_client),
+) -> Comment:
+    comments_collection: Collection = client["database"]["comments"]
+    comment_data = comments_collection.find_one({"_id": comment_id, "article_id": article.id})
+    if comment_data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=strings.COMMENT_DOES_NOT_EXIST,
+        )
+    return Comment(**comment_data)

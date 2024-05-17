@@ -10,6 +10,9 @@ from app.models.domain.articles import Article
 from app.models.domain.comments import Comment
 from app.models.domain.users import User
 
+from pymongo import MongoClient
+from bson import ObjectId
+
 
 class CommentsRepository(BaseRepository):
     def __init__(self, conn: Connection) -> None:
@@ -19,25 +22,24 @@ class CommentsRepository(BaseRepository):
     async def get_comment_by_id(
         self,
         *,
-        comment_id: int,
+        comment_id: ObjectId,
         article: Article,
         user: Optional[User] = None,
     ) -> Comment:
-        comment_row = await queries.get_comment_by_id_and_slug(
-            self.connection,
-            comment_id=comment_id,
-            article_slug=article.slug,
-        )
-        if comment_row:
-            return await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
-                requested_user=user,
-            )
-
+        """Get a comment by its ID."""
+        comment = self.client["database"]["articles"].find_one({"_id": article.id, "comments.comment_id": comment_id})
+        if comment:
+            comment_body = next((c for c in comment["comments"] if c["comment_id"] == comment_id), None)
+            if comment_body:
+                return await self._get_comment_from_db_record(
+                    comment_row=comment_body,
+                    author_username=comment_body["author_username"],
+                    requested_user=user,
+                )
         raise EntityDoesNotExist(
             "comment with id {0} does not exist".format(comment_id),
         )
+
 
     async def get_comments_for_article(
         self,
@@ -45,18 +47,24 @@ class CommentsRepository(BaseRepository):
         article: Article,
         user: Optional[User] = None,
     ) -> List[Comment]:
-        comments_rows = await queries.get_comments_for_article_by_slug(
-            self.connection,
-            slug=article.slug,
-        )
-        return [
-            await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
-                requested_user=user,
-            )
-            for comment_row in comments_rows
-        ]
+        article_data = self.articles_collection.find_one({"slug": article.slug})
+        if article_data is None:
+            raise EntityDoesNotExist
+        comments_ids = article_data.get("comments", [])
+        comments_data = self.users_collection.find({"comments.comment_id": {"$in": comments_ids}})
+        comments = []
+        for comment_data in comments_data:
+            for comment in comment_data["comments"]:
+                if comment["comment_id"] in comments_ids:
+                    comments.append(
+                        await self._get_comment_from_db_record(
+                            comment_row=comment,
+                            author_username=comment_data["username"],
+                            requested_user=user,
+                        )
+                    )
+        return comments
+
 
     async def create_comment_for_article(
         self,
@@ -65,39 +73,39 @@ class CommentsRepository(BaseRepository):
         article: Article,
         user: User,
     ) -> Comment:
-        comment_row = await queries.create_new_comment(
-            self.connection,
-            body=body,
-            article_slug=article.slug,
-            author_username=user.username,
-        )
-        return await self._get_comment_from_db_record(
-            comment_row=comment_row,
-            author_username=comment_row["author_username"],
-            requested_user=user,
-        )
+        article_id = article.id
+        user_id = user.id
+        comment = {"body": body, "article_id": article_id, "author_id": user_id}
+        result = self.articles_collection.update_one({"_id": article_id}, {"$push": {"comments": comment}})
+        if result.modified_count == 1:
+            comment_id = self.articles_collection.find_one({"_id": article_id}, {"comments": {"$slice": -1}})["comments"][0]["_id"]
+            return Comment(id=comment_id, body=body, article=article, user=user)
+        else:
+            raise EntityDoesNotExist("Article not found")
+
 
     async def delete_comment(self, *, comment: Comment) -> None:
-        await queries.delete_comment_by_id(
-            self.connection,
-            comment_id=comment.id_,
-            author_username=comment.author.username,
-        )
+        filter_ = {"_id": ObjectId(comment.id_)}
+        self.comments_collection.delete_one(filter_)
+
 
     async def _get_comment_from_db_record(
         self,
         *,
-        comment_row: Record,
+        comment_id: str,
         author_username: str,
         requested_user: Optional[User],
     ) -> Comment:
+        comment = self.comments_collection.find_one({"_id": ObjectId(comment_id)})
+        if comment is None:
+            raise EntityDoesNotExist
         return Comment(
-            id_=comment_row["id"],
-            body=comment_row["body"],
+            id_=str(comment["_id"]),
+            body=comment["body"],
             author=await self._profiles_repo.get_profile_by_username(
                 username=author_username,
                 requested_user=requested_user,
             ),
-            created_at=comment_row["created_at"],
-            updated_at=comment_row["updated_at"],
+            created_at=comment["created_at"],
+            updated_at=comment["updated_at"],
         )

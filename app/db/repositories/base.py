@@ -1,4 +1,7 @@
 from asyncpg.connection import Connection
+from pymongo.collection import Collection
+from pymongo.database import Database
+from typing import Any
 
 
 class BaseRepository:
@@ -6,5 +9,9 @@ class BaseRepository:
         self._conn = conn
 
     @property
-    def connection(self) -> Connection:
-        return self._conn
+    def connection(self) -> Database:
+        return self._db
+
+    def get_collection(self) -> Collection:
+        """Gets the MongoDB collection."""
+        return self._collection
