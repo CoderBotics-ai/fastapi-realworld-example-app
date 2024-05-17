@@ -15,21 +15,29 @@ from app.models.domain.users import User
 from app.resources import strings
 from app.services import jwt
 
+
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from app.db.repositories.base import BaseRepository
+
 HEADER_KEY = "Authorization"
 
 
 class RWAPIKeyHeader(APIKeyHeader):
-    async def __call__(  # noqa: WPS610
-        self,
-        request: requests.Request,
-    ) -> Optional[str]:
+
+    async def __call__(self, request: requests.Request) -> Optional[str]:
         try:
-            return await super().__call__(request)
+            api_key: str = request.headers.get("X-API-KEY")
+            if not api_key:
+                raise StarletteHTTPException(status_code=401, detail=strings.AUTHENTICATION_REQUIRED)
+            client: MongoClient = MongoClient("mongodb://localhost:27017/")
+            users_collection: Collection = client["app"]["users"]
+            user: dict = users_collection.find_one({"api_key": api_key})
+            if not user:
+                raise StarletteHTTPException(status_code=401, detail=strings.AUTHENTICATION_REQUIRED)
+            return api_key
         except StarletteHTTPException as original_auth_exc:
-            raise HTTPException(
-                status_code=original_auth_exc.status_code,
-                detail=strings.AUTHENTICATION_REQUIRED,
-            )
+            raise HTTPException(status_code=original_auth_exc.status_code, detail=strings.AUTHENTICATION_REQUIRED)
 
 
 def get_current_user_authorizer(*, required: bool = True) -> Callable:  # type: ignore
@@ -62,6 +70,20 @@ def _get_authorization_header(
 
     return token
 
+async def _get_current_user_optional(
+    repo: BaseRepository = Depends(get_repository(UsersRepository)),
+    token: str = Depends(_get_authorization_header_retriever(required=False)),
+    settings: AppSettings = Depends(get_app_settings),
+) -> Optional[User]:
+    if token:
+        user_collection: Collection = repo.collection
+        user = user_collection.find_one({"username": jwt.get_username_from_token(token, settings)})
+        if user:
+            return User(**user)
+        else:
+            return None
+    return None
+
 
 def _get_authorization_header_optional(
     authorization: Optional[str] = Security(
@@ -73,7 +95,6 @@ def _get_authorization_header_optional(
         return _get_authorization_header(authorization, settings)
 
     return ""
-
 
 async def _get_current_user(
     users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
@@ -92,20 +113,12 @@ async def _get_current_user(
         )
 
     try:
-        return await users_repo.get_user_by_username(username=username)
+        user = await users_repo.get_user_by_username(username=username)
+        if user is None:
+            raise EntityDoesNotExist
+        return user
     except EntityDoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.MALFORMED_PAYLOAD,
         )
-
-
-async def _get_current_user_optional(
-    repo: UsersRepository = Depends(get_repository(UsersRepository)),
-    token: str = Depends(_get_authorization_header_retriever(required=False)),
-    settings: AppSettings = Depends(get_app_settings),
-) -> Optional[User]:
-    if token:
-        return await _get_current_user(repo, token, settings)
-
-    return None

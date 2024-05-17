@@ -3,6 +3,9 @@ from typing import Optional
 
 from pypika import Parameter as CommonParameter, Query, Table
 
+from pymongo import MongoClient
+from pymongo.collection import Collection
+
 
 class Parameter(CommonParameter):
     def __init__(self, count: int) -> None:
@@ -10,7 +13,6 @@ class Parameter(CommonParameter):
 
 
 class TypedTable(Table):
-    __table__ = ""
 
     def __init__(
         self,
@@ -20,12 +22,15 @@ class TypedTable(Table):
         query_cls: Optional[Query] = None,
     ) -> None:
         if name is None:
-            if self.__table__:
+            if hasattr(self, '__table__'):
                 name = self.__table__
             else:
                 name = self.__class__.__name__
 
-        super().__init__(name, schema, alias, query_cls)
+        self.collection = pymongo.collection.Collection(pymongo.MongoClient().test, name)
+        self.schema = schema
+        self.alias = alias
+        self.query_cls = query_cls
 
 
 class Users(TypedTable):
