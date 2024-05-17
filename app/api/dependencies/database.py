@@ -6,25 +6,25 @@ from fastapi import Depends
 from starlette.requests import Request
 
 from app.db.repositories.base import BaseRepository
-
-
-def _get_db_pool(request: Request) -> Pool:
-    return request.app.state.pool
-
+from pymongo import MongoClient
+from pymongo.client import MongoClient as MongoPool
 
 async def _get_connection_from_pool(
-    pool: Pool = Depends(_get_db_pool),
-) -> AsyncGenerator[Connection, None]:
-    async with pool.acquire() as conn:
-        yield conn
-
+    pool: MongoClient = Depends(_get_db_pool),
+) -> AsyncGenerator[MongoClient, None]:
+    async with pool.start_session() as session:
+        yield session
 
 def get_repository(
     repo_type: Type[BaseRepository],
-) -> Callable[[Connection], BaseRepository]:
+) -> Callable[[MongoClient], BaseRepository]:
     def _get_repo(
-        conn: Connection = Depends(_get_connection_from_pool),
+        client: MongoClient = Depends(_get_db_pool),
     ) -> BaseRepository:
-        return repo_type(conn)
+        return repo_type(client)
 
     return _get_repo
+
+
+def _get_db_pool(request: Request) -> MongoClient:
+    return request.app.state.pool

@@ -15,14 +15,20 @@ from app.models.domain.users import User
 from app.resources import strings
 from app.services import jwt
 
+
+from pymongo import MongoClient
+from app.db.repositories.base import BaseRepository
+
 HEADER_KEY = "Authorization"
 
 
 class RWAPIKeyHeader(APIKeyHeader):
-    async def __call__(  # noqa: WPS610
-        self,
-        request: requests.Request,
-    ) -> Optional[str]:
+
+    async def __call__(self, request: requests.Request) -> str:
+        """Override the __call__ method to use PyMongo instead of SQL."""
+        client = MongoClient("mongodb://localhost:27017/")
+        db = client["app"]
+        users_collection = db["users"]
         try:
             return await super().__call__(request)
         except StarletteHTTPException as original_auth_exc:
@@ -74,6 +80,18 @@ def _get_authorization_header_optional(
 
     return ""
 
+async def _get_current_user_optional(
+    repo: UsersRepository = Depends(get_repository(UsersRepository)),
+    token: str = Depends(_get_authorization_header_retriever(required=False)),
+    settings: AppSettings = Depends(get_app_settings),
+) -> Optional[User]:
+    if token:
+        user = await repo.get_user_by_token(token)
+        if user:
+            return user
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=strings.INVALID_CREDENTIALS)
+    return None
 
 async def _get_current_user(
     users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
@@ -92,20 +110,16 @@ async def _get_current_user(
         )
 
     try:
-        return await users_repo.get_user_by_username(username=username)
-    except EntityDoesNotExist:
+        user = await users_repo.client["users"].find_one({"username": username})
+        if user:
+            return User(**user)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=strings.MALFORMED_PAYLOAD,
+            )
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=strings.MALFORMED_PAYLOAD,
         )
-
-
-async def _get_current_user_optional(
-    repo: UsersRepository = Depends(get_repository(UsersRepository)),
-    token: str = Depends(_get_authorization_header_retriever(required=False)),
-    settings: AppSettings = Depends(get_app_settings),
-) -> Optional[User]:
-    if token:
-        return await _get_current_user(repo, token, settings)
-
-    return None

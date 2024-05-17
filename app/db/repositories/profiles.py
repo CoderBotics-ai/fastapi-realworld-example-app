@@ -8,13 +8,20 @@ from app.db.repositories.users import UsersRepository
 from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 
+from pymongo import MongoClient
+from typing import TypeVar
+from typing import Any
+UserLike = TypeVar("UserLike")
+
 UserLike = Union[User, Profile]
 
 
 class ProfilesRepository(BaseRepository):
-    def __init__(self, conn: Connection):
-        super().__init__(conn)
-        self._users_repo = UsersRepository(conn)
+
+    def __init__(self, client):
+        super().__init__(client)
+        self._users_repo = UsersRepository(client)
+
 
     async def get_profile_by_username(
         self,
@@ -22,16 +29,19 @@ class ProfilesRepository(BaseRepository):
         username: str,
         requested_user: Optional[UserLike],
     ) -> Profile:
-        user = await self._users_repo.get_user_by_username(username=username)
+        user = self.users_collection.find_one({"username": username})
+        if user is None:
+            raise Exception("User not found")
 
-        profile = Profile(username=user.username, bio=user.bio, image=user.image)
+        profile = Profile(username=user["username"], bio=user["bio"], image=user["image"])
         if requested_user:
-            profile.following = await self.is_user_following_for_another_user(
-                target_user=user,
-                requested_user=requested_user,
-            )
+            if requested_user.username in user["followers"]:
+                profile.following = True
+            else:
+                profile.following = False
 
         return profile
+
 
     async def is_user_following_for_another_user(
         self,
@@ -39,13 +49,14 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> bool:
-        return (
-            await queries.is_user_following_for_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
-            )
-        )["is_following"]
+        """Checks if a user is following another user."""
+        target_user_id = target_user.id
+        requested_user_id = requested_user.id
+        user_data = self.users_collection.find_one({"_id": target_user_id})
+        if user_data and "followers" in user_data:
+            return requested_user_id in user_data["followers"]
+        return False
+
 
     async def add_user_into_followers(
         self,
@@ -53,12 +64,12 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> None:
-        async with self.connection.transaction():
-            await queries.subscribe_user_to_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
-            )
+        """Adds a user into the followers of another user."""
+        self.users_collection.update_one(
+            {"_id": target_user.id},
+            {"$push": {"followers": requested_user.id}},
+        )
+
 
     async def remove_user_from_followers(
         self,
@@ -66,9 +77,7 @@ class ProfilesRepository(BaseRepository):
         target_user: UserLike,
         requested_user: UserLike,
     ) -> None:
-        async with self.connection.transaction():
-            await queries.unsubscribe_user_from_another(
-                self.connection,
-                follower_username=requested_user.username,
-                following_username=target_user.username,
-            )
+        """Removes a user from the followers of another user."""
+        filter = {"_id": target_user.id}
+        update = {"$pull": {"followers": requested_user.id}}
+        self.users_collection.update_one(filter, update)

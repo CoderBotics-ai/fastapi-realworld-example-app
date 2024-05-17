@@ -6,59 +6,20 @@ from app.core.config import get_app_settings
 from app.core.settings.app import AppSettings
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.users import UsersRepository
+from app.resources import strings
+from app.services import jwt
+from app.services.authentication import check_email_is_taken, check_username_is_taken
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from bson.objectid import ObjectId
+from datetime import datetime
 from app.models.schemas.users import (
     UserInCreate,
     UserInLogin,
     UserInResponse,
     UserWithToken,
 )
-from app.resources import strings
-from app.services import jwt
-from app.services.authentication import check_email_is_taken, check_username_is_taken
 
-router = APIRouter()
-
-
-@router.post("/login", response_model=UserInResponse, name="auth:login")
-async def login(
-    user_login: UserInLogin = Body(..., embed=True, alias="user"),
-    users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
-    settings: AppSettings = Depends(get_app_settings),
-) -> UserInResponse:
-    wrong_login_error = HTTPException(
-        status_code=HTTP_400_BAD_REQUEST,
-        detail=strings.INCORRECT_LOGIN_INPUT,
-    )
-
-    try:
-        user = await users_repo.get_user_by_email(email=user_login.email)
-    except EntityDoesNotExist as existence_error:
-        raise wrong_login_error from existence_error
-
-    if not user.check_password(user_login.password):
-        raise wrong_login_error
-
-    token = jwt.create_access_token_for_user(
-        user,
-        str(settings.secret_key.get_secret_value()),
-    )
-    return UserInResponse(
-        user=UserWithToken(
-            username=user.username,
-            email=user.email,
-            bio=user.bio,
-            image=user.image,
-            token=token,
-        ),
-    )
-
-
-@router.post(
-    "",
-    status_code=HTTP_201_CREATED,
-    response_model=UserInResponse,
-    name="auth:register",
-)
 async def register(
     user_create: UserInCreate = Body(..., embed=True, alias="user"),
     users_repo: UsersRepository = Depends(get_repository(UsersRepository)),
@@ -76,7 +37,16 @@ async def register(
             detail=strings.EMAIL_TAKEN,
         )
 
-    user = await users_repo.create_user(**user_create.dict())
+    user_data = user_create.dict()
+    user_data["created_at"] = datetime.utcnow()
+    user_data["updated_at"] = datetime.utcnow()
+    user_data["followers"] = []
+    user_data["followings"] = []
+    user_data["favorites"] = []
+    user_data["comments"] = []
+
+    result = users_repo.collection.insert_one(user_data)
+    user = users_repo.collection.find_one({"_id": result.inserted_id})
 
     token = jwt.create_access_token_for_user(
         user,
@@ -84,10 +54,50 @@ async def register(
     )
     return UserInResponse(
         user=UserWithToken(
-            username=user.username,
-            email=user.email,
-            bio=user.bio,
-            image=user.image,
+            username=user["username"],
+            email=user["email"],
+            bio=user["bio"],
+            image=user["image"],
+            token=token,
+        ),
+    )
+
+router = APIRouter()
+
+
+@router.post("/login", response_model=UserInResponse, name="auth:login")
+async def login(
+    user_login: UserInLogin = Body(..., embed=True, alias="user"),
+    settings: AppSettings = Depends(get_app_settings),
+) -> UserInResponse:
+    wrong_login_error = HTTPException(
+        status_code=HTTP_400_BAD_REQUEST,
+        detail=strings.INCORRECT_LOGIN_INPUT,
+    )
+
+    client: MongoClient = MongoClient(settings.mongo_uri)
+    users_collection: Collection = client["app"]["users"]
+
+    try:
+        user = users_collection.find_one({"email": user_login.email})
+        if user is None:
+            raise wrong_login_error
+    except Exception as existence_error:
+        raise wrong_login_error from existence_error
+
+    if not user.get("hashed_password") == user_login.password:
+        raise wrong_login_error
+
+    token = jwt.create_access_token_for_user(
+        user,
+        str(settings.secret_key.get_secret_value()),
+    )
+    return UserInResponse(
+        user=UserWithToken(
+            username=user.get("username"),
+            email=user.get("email"),
+            bio=user.get("bio"),
+            image=user.get("image"),
             token=token,
         ),
     )
