@@ -9,19 +9,10 @@ from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 from app.models.schemas.profiles import ProfileInResponse
 from app.resources import strings
+from pymongo import MongoClient
+from bson import ObjectId
 
-router = APIRouter()
-
-
-@router.get(
-    "/{username}",
-    response_model=ProfileInResponse,
-    name="profiles:get-profile",
-)
-async def retrieve_profile_by_username(
-    profile: Profile = Depends(get_profile_by_username_from_path),
-) -> ProfileInResponse:
-    return ProfileInResponse(profile=profile)
+client = MongoClient("mongodb://localhost:27017")
 
 
 @router.post(
@@ -46,10 +37,24 @@ async def follow_for_user(
             detail=strings.USER_IS_ALREADY_FOLLOWED,
         )
 
-    await profiles_repo.add_user_into_followers(
-        target_user=profile,
-        requested_user=user,
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["your_database_name"]
+    users_collection = db["users"]
+
+    user_id = ObjectId(user.id)
+    profile_id = ObjectId(profile.id)
+
+    users_collection.update_one(
+        {"_id": profile_id},
+        {"$addToSet": {"followers": user_id}}
     )
+
+    users_collection.update_one(
+        {"_id": user_id},
+        {"$addToSet": {"followings": profile_id}}
+    )
+
+    profile.following = True
 
     return ProfileInResponse(profile=profile.copy(update={"following": True}))
 
@@ -76,9 +81,43 @@ async def unsubscribe_from_user(
             detail=strings.USER_IS_NOT_FOLLOWED,
         )
 
-    await profiles_repo.remove_user_from_followers(
-        target_user=profile,
-        requested_user=user,
+    client = MongoClient()
+    db = client.your_database_name
+    users_collection = db.users
+
+    users_collection.update_one(
+        {"_id": ObjectId(profile.id)},
+        {"$pull": {"followers": ObjectId(user.id)}}
+    )
+
+    users_collection.update_one(
+        {"_id": ObjectId(user.id)},
+        {"$pull": {"followings": ObjectId(profile.id)}}
     )
 
     return ProfileInResponse(profile=profile.copy(update={"following": False}))
+db = client["your_database_name"]
+profiles_collection = db["profiles"]
+
+router = APIRouter()
+
+
+@router.get(
+    "/{username}",
+    response_model=ProfileInResponse,
+    name="profiles:get-profile",
+)
+async def retrieve_profile_by_username(
+    profile: Profile = Depends(get_profile_by_username_from_path),
+) -> ProfileInResponse:
+    profile_data = profiles_collection.find_one({"username": profile.username})
+    if not profile_data:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=strings.PROFILE_NOT_FOUND)
+    
+    profile = Profile(
+        username=profile_data["username"],
+        bio=profile_data.get("bio", ""),
+        image=profile_data.get("image", ""),
+        following=False  # Assuming you have logic to determine if the current user is following this profile
+    )
+    return ProfileInResponse(profile=profile)
