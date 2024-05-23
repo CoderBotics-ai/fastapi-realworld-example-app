@@ -3,6 +3,11 @@ from fastapi import APIRouter, Depends
 from app.api.dependencies.database import get_repository
 from app.db.repositories.tags import TagsRepository
 from app.models.schemas.tags import TagsInList
+from pymongo import MongoClient
+from typing import List
+
+from pymongo import MongoClient
+from typing import List
 
 router = APIRouter()
 

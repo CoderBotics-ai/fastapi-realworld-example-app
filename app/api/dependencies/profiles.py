@@ -10,6 +10,11 @@ from app.db.repositories.profiles import ProfilesRepository
 from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 from app.resources import strings
+from pymongo import MongoClient
+from bson import ObjectId
+
+from pymongo import MongoClient
+from bson import ObjectId
 
 
 async def get_profile_by_username_from_path(
@@ -17,13 +22,16 @@ async def get_profile_by_username_from_path(
     user: Optional[User] = Depends(get_current_user_authorizer(required=False)),
     profiles_repo: ProfilesRepository = Depends(get_repository(ProfilesRepository)),
 ) -> Profile:
-    try:
-        return await profiles_repo.get_profile_by_username(
-            username=username,
-            requested_user=user,
-        )
-    except EntityDoesNotExist:
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["your_database_name"]
+    profiles_collection = db["profiles"]
+
+    profile_data = profiles_collection.find_one({"username": username})
+    if not profile_data:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=strings.USER_DOES_NOT_EXIST_ERROR,
         )
+
+    profile = Profile(**profile_data)
+    return profile

@@ -4,14 +4,15 @@ from app.db.errors import EntityDoesNotExist
 from app.db.repositories.articles import ArticlesRepository
 from app.models.domain.articles import Article
 from app.models.domain.users import User
+from pymongo.collection import Collection
+from bson.objectid import ObjectId
 
 
 async def check_article_exists(articles_repo: ArticlesRepository, slug: str) -> bool:
-    try:
-        await articles_repo.get_article_by_slug(slug=slug)
-    except EntityDoesNotExist:
+    articles_collection: Collection = articles_repo.db["articles"]
+    article = await articles_collection.find_one({"slug": slug})
+    if article is None:
         return False
-
     return True
 
 

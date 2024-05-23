@@ -5,6 +5,7 @@ from loguru import logger
 
 from app.core.settings.app import AppSettings
 from app.db.events import close_db_connection, connect_to_db
+from pymongo import MongoClient
 
 
 def create_start_app_handler(
@@ -12,7 +13,9 @@ def create_start_app_handler(
     settings: AppSettings,
 ) -> Callable:  # type: ignore
     async def start_app() -> None:
-        await connect_to_db(app, settings)
+        client = MongoClient(settings.mongodb_uri)
+        app.state.mongodb_client = client
+        app.state.mongodb = client[settings.mongodb_db]
 
     return start_app
 
